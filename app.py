@@ -5,101 +5,105 @@ import plotly.graph_objects as go
 
 st.set_page_config(page_title="Dashboard RKP", page_icon="🌴", layout="wide")
 
-# ---------------------------------------------------------
-# HELPER FUNCTIONS
-# ---------------------------------------------------------
-
 RUPIAH = lambda x: f"Rp {x:,.0f}".replace(",", ".")
+ANGKA = lambda x: f"{x:,.1f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+# ---------------------------------------------------------
+# LOAD DATA
+# ---------------------------------------------------------
 
 @st.cache_data
 def load_data(file, sheet_name="Rekap RKP"):
     df = pd.read_excel(file, sheet_name=sheet_name)
-    # Bersihkan tipe data numerik
-    num_cols = ["Target Biaya", "Realisasi Biaya", "Selisih Biaya",
-                "Target Ha", "Realisasi Ha", "Selisih Ha",
-                "% Realisasi", "% Sisa"]
+    num_cols = [
+        "Target Rp/Ha", "Realisasi Rp/Ha", "Target Ha", "Target Biaya",
+        "Realisasi Ha", "Realisasi Biaya", "Selisih Ha", "Selisih Biaya",
+        "% Realisasi", "% Sisa",
+    ]
     for c in num_cols:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
     return df
 
 
-def kpi_card(col, label, value, delta=None, help_text=None):
-    col.metric(label, value, delta=delta, help=help_text)
+def pct(numerator, denominator):
+    return (numerator / denominator * 100) if denominator else 0.0
 
 
-def generate_insights(df):
-    """Menghasilkan analisa otomatis berbasis data Target vs Realisasi."""
+def generate_insights(df, proyek_name):
     insights = []
+    total_target_biaya = df["Target Biaya"].sum()
+    total_realisasi_biaya = df["Realisasi Biaya"].sum()
+    total_target_ha = df["Target Ha"].sum()
+    total_realisasi_ha = df["Realisasi Ha"].sum()
 
-    total_target = df["Target Biaya"].sum()
-    total_realisasi = df["Realisasi Biaya"].sum()
-    total_selisih = total_target - total_realisasi
-    pct_realisasi = (total_realisasi / total_target * 100) if total_target > 0 else 0
+    capaian_biaya = pct(total_realisasi_biaya, total_target_biaya)
+    capaian_fisik = pct(total_realisasi_ha, total_target_ha)
 
-    if total_realisasi == 0:
+    if total_realisasi_biaya == 0 and total_realisasi_ha == 0:
         insights.append(
-            "ℹ️ Belum ada data **Realisasi Biaya** yang terisi (semua bernilai 0). "
-            "Dashboard ini sudah lengkap dengan logika analisa otomatis (biaya melebihi "
-            "target, progres per kegiatan, dll) — begitu kolom *Realisasi Biaya* diisi di "
-            "Excel dan file di-upload ulang, semua insight di bawah akan otomatis muncul."
+            f"ℹ️ Untuk **{proyek_name}**, kolom Realisasi Biaya dan Realisasi Fisik (Ha) "
+            "masih kosong (0). Begitu data ini diisi di Excel dan file di-upload ulang, "
+            "seluruh analisa di bawah (termasuk item yang *over budget*) akan otomatis muncul."
         )
     else:
         insights.append(
-            f"📊 Realisasi biaya saat ini mencapai **{pct_realisasi:.1f}%** dari total target "
-            f"({RUPIAH(total_realisasi)} dari {RUPIAH(total_target)})."
+            f"📊 **{proyek_name}**: capaian biaya **{capaian_biaya:.1f}%** "
+            f"({RUPIAH(total_realisasi_biaya)} dari target {RUPIAH(total_target_biaya)}), "
+            f"capaian fisik **{capaian_fisik:.1f}%** "
+            f"({ANGKA(total_realisasi_ha)} Ha dari target {ANGKA(total_target_ha)} Ha)."
         )
-
-    # Item yang melebihi target (over budget)
-    over_budget = df[df["Realisasi Biaya"] > df["Target Biaya"]].copy()
-    if not over_budget.empty:
-        over_budget["Selisih (%)"] = (
-            (over_budget["Realisasi Biaya"] - over_budget["Target Biaya"])
-            / over_budget["Target Biaya"].replace(0, pd.NA) * 100
-        )
-        worst = over_budget.sort_values("Selisih Biaya", ascending=True).head(3)
-        for _, row in worst.iterrows():
+        if capaian_fisik > 0 and capaian_biaya > capaian_fisik + 10:
             insights.append(
-                f"⚠️ **{row.get('Rincian Kegiatan', row.get('Kegiatan',''))}** "
-                f"({row.get('Proyek','')}) melebihi target sebesar "
-                f"{RUPIAH(abs(row['Realisasi Biaya'] - row['Target Biaya']))} "
-                f"({row['Selisih (%)']:.0f}% di atas target)."
+                "⚠️ Penyerapan biaya berjalan **lebih cepat** dibanding progres fisik di lapangan "
+                "— perlu dicek apakah ada pemborosan atau kegiatan yang dibayar di muka."
+            )
+        elif capaian_biaya > 0 and capaian_fisik > capaian_biaya + 10:
+            insights.append(
+                "✅ Progres fisik lebih cepat dari penyerapan biaya — efisiensi biaya cukup baik."
             )
 
-    # Kegiatan dengan target terbesar (paling berisiko/penting dipantau)
-    by_kegiatan = df.groupby("Kegiatan", dropna=True)["Target Biaya"].sum().sort_values(ascending=False)
-    if not by_kegiatan.empty and by_kegiatan.iloc[0] > 0:
-        top_kegiatan = by_kegiatan.index[0]
-        insights.append(
-            f"🏗️ Kegiatan dengan alokasi anggaran terbesar adalah **{top_kegiatan}** "
-            f"senilai {RUPIAH(by_kegiatan.iloc[0])} "
-            f"({by_kegiatan.iloc[0] / df['Target Biaya'].sum() * 100:.0f}% dari total target)."
-        )
+    # Item yang over budget (Realisasi Biaya > Target Biaya)
+    over = df[(df["Realisasi Biaya"] > df["Target Biaya"]) & (df["Target Biaya"] > 0)].copy()
+    if not over.empty:
+        over["Selisih (%)"] = (over["Realisasi Biaya"] - over["Target Biaya"]) / over["Target Biaya"] * 100
+        worst = over.sort_values("Selisih (%)", ascending=False).head(5)
+        insights.append(f"🔴 Ditemukan **{len(over)} item** dengan biaya melebihi target, contohnya:")
+        for _, row in worst.iterrows():
+            nama = row.get("Rincian Kegiatan") or row.get("Sub Kegiatan") or row.get("Kegiatan", "")
+            insights.append(
+                f"　　⚠️ **{nama}** — melebihi target {RUPIAH(row['Realisasi Biaya'] - row['Target Biaya'])} "
+                f"({row['Selisih (%)']:.0f}% di atas target)"
+            )
+
+    # Item fisik yang belum tercapai jauh dari target
+    if total_target_ha > 0 and "Realisasi Ha" in df.columns:
+        lag = df[(df["Target Ha"] > 0) & (df["Realisasi Ha"] < df["Target Ha"])]
+        if not lag.empty and total_realisasi_ha > 0:
+            insights.append(
+                f"🟡 Ada **{len(lag)} item pekerjaan** yang realisasi fisiknya (Ha) masih di bawah target — "
+                "perlu jadi prioritas pemantauan lapangan."
+            )
 
     return insights
 
 
 # ---------------------------------------------------------
-# SIDEBAR - UPLOAD & FILTER
+# SIDEBAR - UPLOAD
 # ---------------------------------------------------------
 
 st.sidebar.title("⚙️ Pengaturan")
 uploaded_file = st.sidebar.file_uploader("Upload file Excel RKP (.xlsx)", type=["xlsx"])
 
-st.title("🌴 Dashboard RKP — Target vs Realisasi Biaya")
-st.caption("Upload file Master RKP untuk melihat dashboard dan analisa otomatis.")
-
 if uploaded_file is None:
+    st.title("🌴 Dashboard RKP")
     st.info("👈 Silakan upload file Excel RKP (sheet **'Rekap RKP'**) di sidebar untuk mulai.")
     st.stop()
 
 try:
     xl = pd.ExcelFile(uploaded_file)
-    sheet_choice = st.sidebar.selectbox(
-        "Pilih sheet data",
-        options=[s for s in xl.sheet_names if s.lower() in ("rekap rkp",)] or xl.sheet_names,
-        index=0,
-    )
+    sheet_options = [s for s in xl.sheet_names if s.lower() == "rekap rkp"] or xl.sheet_names
+    sheet_choice = st.sidebar.selectbox("Pilih sheet data", options=sheet_options, index=0)
     df = load_data(uploaded_file, sheet_name=sheet_choice)
 except Exception as e:
     st.error(f"Gagal membaca file: {e}")
@@ -108,11 +112,23 @@ except Exception as e:
 required_cols = {"Proyek", "Kegiatan", "Target Biaya", "Realisasi Biaya"}
 missing = required_cols - set(df.columns)
 if missing:
-    st.warning(f"Kolom berikut tidak ditemukan di sheet '{sheet_choice}': {', '.join(missing)}. "
-               f"Pastikan Anda memilih sheet 'Rekap RKP'.")
+    st.warning(
+        f"Kolom berikut tidak ditemukan di sheet '{sheet_choice}': {', '.join(missing)}. "
+        f"Pastikan Anda memilih sheet 'Rekap RKP'."
+    )
+    st.stop()
 
-# --- Filters umum (multi-select, broad) ---
-st.sidebar.markdown("### 🔍 Filter Umum")
+# ---------------------------------------------------------
+# FILTER UTAMA: PILIH 1 PROYEK
+# ---------------------------------------------------------
+
+st.sidebar.markdown("### 🏗️ Pilih Proyek")
+daftar_proyek = sorted(df["Proyek"].dropna().unique().tolist())
+proyek_pilihan = st.sidebar.selectbox("Proyek", daftar_proyek, index=0)
+
+df_proyek = df[df["Proyek"] == proyek_pilihan].copy()
+
+st.sidebar.markdown("### 🔍 Filter Tambahan (opsional)")
 
 def multiselect_filter(col_name, label, data):
     if col_name in data.columns:
@@ -121,70 +137,52 @@ def multiselect_filter(col_name, label, data):
         return selected
     return None
 
-proyek_sel = multiselect_filter("Proyek", "Proyek", df)
-tahun_sel = multiselect_filter("Tahun", "Tahun", df)
-bulan_sel = multiselect_filter("Bulan", "Bulan / Cawu", df)
+tahun_sel = multiselect_filter("Tahun", "Tahun", df_proyek)
+kegiatan_sel = multiselect_filter("Kegiatan", "Kegiatan", df_proyek)
+bulan_sel = multiselect_filter("Bulan", "Bulan / Cawu", df_proyek)
 
-df_f = df.copy()
-if proyek_sel is not None:
-    df_f = df_f[df_f["Proyek"].isin(proyek_sel)]
+df_f = df_proyek.copy()
 if tahun_sel is not None:
     df_f = df_f[df_f["Tahun"].isin(tahun_sel)]
+if kegiatan_sel is not None:
+    df_f = df_f[df_f["Kegiatan"].isin(kegiatan_sel)]
 if bulan_sel is not None:
     df_f = df_f[df_f["Bulan"].isin(bulan_sel)]
 
-# --- Filter bertingkat / drill-down: Kegiatan -> Sub Kegiatan -> Rincian Kegiatan ---
-st.sidebar.markdown("### 🎯 Fokus Pekerjaan (Drill-down)")
-st.sidebar.caption("Pilih satu pekerjaan spesifik — grafik, tabel, dan analisa di bawah akan otomatis menyesuaikan.")
-
-ALL = "— Semua —"
-
-def cascading_select(col_name, label, data):
-    if col_name not in data.columns:
-        return None, data
-    options = [ALL] + sorted(data[col_name].dropna().unique().tolist())
-    choice = st.sidebar.selectbox(label, options, index=0, key=f"dd_{col_name}")
-    if choice != ALL:
-        data = data[data[col_name] == choice]
-    return (choice if choice != ALL else None), data
-
-kegiatan_pick, df_f = cascading_select("Kegiatan", "Kegiatan", df_f)
-sub_pick, df_f = cascading_select("Sub Kegiatan", "Sub Kegiatan", df_f)
-rincian_pick, df_f = cascading_select("Rincian Kegiatan", "Rincian Kegiatan (Pekerjaan)", df_f)
-
-# --- Klik grafik untuk filter (opsional, melengkapi drill-down sidebar) ---
-if "chart_click_kegiatan" not in st.session_state:
-    st.session_state.chart_click_kegiatan = None
-
-if st.session_state.chart_click_kegiatan and kegiatan_pick is None and "Kegiatan" in df_f.columns:
-    df_f = df_f[df_f["Kegiatan"] == st.session_state.chart_click_kegiatan]
-    st.sidebar.info(f"Grafik difilter ke Kegiatan: **{st.session_state.chart_click_kegiatan}**")
-    if st.sidebar.button("✖️ Batalkan filter dari grafik"):
-        st.session_state.chart_click_kegiatan = None
-        st.rerun()
+st.title(f"🌴 Dashboard RKP — {proyek_pilihan}")
+st.caption("Semua kartu, grafik, dan analisa di bawah mengikuti proyek & filter yang dipilih di sidebar.")
 
 if df_f.empty:
     st.warning("Tidak ada data untuk kombinasi filter ini.")
     st.stop()
 
-if kegiatan_pick or sub_pick or rincian_pick:
-    label_focus = rincian_pick or sub_pick or kegiatan_pick
-    st.info(f"🎯 Menampilkan detail untuk: **{label_focus}**")
-
 # ---------------------------------------------------------
-# KPI CARDS
+# REKAP PROYEK — KPI
 # ---------------------------------------------------------
 
-total_target = df_f["Target Biaya"].sum()
-total_realisasi = df_f["Realisasi Biaya"].sum()
-total_selisih = total_target - total_realisasi
-pct_realisasi = (total_realisasi / total_target * 100) if total_target > 0 else 0
+total_target_biaya = df_f["Target Biaya"].sum()
+total_realisasi_biaya = df_f["Realisasi Biaya"].sum()
+sisa_biaya = total_target_biaya - total_realisasi_biaya
+capaian_biaya = pct(total_realisasi_biaya, total_target_biaya)
+
+total_target_ha = df_f["Target Ha"].sum() if "Target Ha" in df_f.columns else 0
+total_realisasi_ha = df_f["Realisasi Ha"].sum() if "Realisasi Ha" in df_f.columns else 0
+sisa_ha = total_target_ha - total_realisasi_ha
+capaian_fisik = pct(total_realisasi_ha, total_target_ha)
+
+st.subheader("📊 Rekap Proyek")
 
 c1, c2, c3, c4 = st.columns(4)
-kpi_card(c1, "Total Target Biaya", RUPIAH(total_target))
-kpi_card(c2, "Total Realisasi Biaya", RUPIAH(total_realisasi))
-kpi_card(c3, "Sisa Anggaran", RUPIAH(total_selisih))
-kpi_card(c4, "% Realisasi", f"{pct_realisasi:.1f}%")
+c1.metric("Target Biaya", RUPIAH(total_target_biaya))
+c2.metric("Realisasi Biaya", RUPIAH(total_realisasi_biaya))
+c3.metric("Sisa Biaya", RUPIAH(sisa_biaya))
+c4.metric("% Capaian Biaya", f"{capaian_biaya:.1f}%")
+
+c5, c6, c7, c8 = st.columns(4)
+c5.metric("Target Fisik (Ha)", f"{ANGKA(total_target_ha)} Ha")
+c6.metric("Realisasi Fisik (Ha)", f"{ANGKA(total_realisasi_ha)} Ha")
+c7.metric("Sisa Fisik (Ha)", f"{ANGKA(sisa_ha)} Ha")
+c8.metric("% Capaian Fisik", f"{capaian_fisik:.1f}%")
 
 st.divider()
 
@@ -193,40 +191,45 @@ st.divider()
 # ---------------------------------------------------------
 
 st.subheader("🧠 Analisa Otomatis")
-for insight in generate_insights(df_f):
-    st.markdown(f"- {insight}")
+for insight in generate_insights(df_f, proyek_pilihan):
+    st.markdown(insight)
 
 st.divider()
 
 # ---------------------------------------------------------
-# CHARTS
+# GRAFIK
 # ---------------------------------------------------------
 
 col_a, col_b = st.columns(2)
 
 with col_a:
-    st.subheader("Target Biaya per Kegiatan")
-    st.caption("💡 Klik salah satu batang untuk memfilter tabel & analisa ke Kegiatan tersebut.")
+    st.subheader("Rp/Ha — Target vs Realisasi")
+    target_rp_ha = df_f["Target Rp/Ha"].dropna().iloc[0] if "Target Rp/Ha" in df_f.columns and not df_f["Target Rp/Ha"].dropna().empty else 0
+    realisasi_rp_ha = (total_realisasi_biaya / total_realisasi_ha) if total_realisasi_ha > 0 else 0
+    rp_ha_df = pd.DataFrame({
+        "Jenis": ["Target Rp/Ha", "Realisasi Rp/Ha"],
+        "Nilai": [target_rp_ha, realisasi_rp_ha],
+    })
+    fig_rp_ha = px.bar(rp_ha_df, x="Jenis", y="Nilai", text="Nilai", color="Jenis")
+    fig_rp_ha.update_traces(texttemplate="Rp %{text:,.0f}", textposition="outside")
+    fig_rp_ha.update_layout(showlegend=False, yaxis_title="Rp per Ha")
+    st.plotly_chart(fig_rp_ha, use_container_width=True)
+    st.caption(
+        "Realisasi Rp/Ha dihitung otomatis = Total Realisasi Biaya ÷ Total Realisasi Fisik (Ha) "
+        "pada proyek & filter terpilih."
+    )
+
+with col_b:
+    st.subheader("Target vs Realisasi Biaya per Kegiatan")
     by_keg = df_f.groupby("Kegiatan", dropna=True)[["Target Biaya", "Realisasi Biaya"]].sum().reset_index()
     by_keg = by_keg.sort_values("Target Biaya", ascending=False)
-    fig = px.bar(
+    fig_keg = px.bar(
         by_keg, x="Kegiatan", y=["Target Biaya", "Realisasi Biaya"],
         barmode="group", labels={"value": "Biaya (Rp)", "variable": ""},
     )
-    event = st.plotly_chart(fig, use_container_width=True, on_select="rerun", key="kegiatan_chart")
-    if event and event.get("selection", {}).get("points"):
-        clicked_label = event["selection"]["points"][0].get("x")
-        if clicked_label and clicked_label != st.session_state.chart_click_kegiatan:
-            st.session_state.chart_click_kegiatan = clicked_label
-            st.rerun()
+    st.plotly_chart(fig_keg, use_container_width=True)
 
-with col_b:
-    st.subheader("Komposisi Target Biaya per Proyek")
-    by_proyek = df_f.groupby("Proyek", dropna=True)["Target Biaya"].sum().reset_index()
-    fig2 = px.pie(by_proyek, names="Proyek", values="Target Biaya", hole=0.4)
-    st.plotly_chart(fig2, use_container_width=True)
-
-st.subheader("Target vs Realisasi per Sub Kegiatan (Top 15 berdasarkan Target)")
+st.subheader("Target vs Realisasi per Sub Kegiatan (Top 15 berdasarkan Target Biaya)")
 if "Sub Kegiatan" in df_f.columns:
     by_sub = (
         df_f.groupby("Sub Kegiatan", dropna=True)[["Target Biaya", "Realisasi Biaya"]]
@@ -235,11 +238,11 @@ if "Sub Kegiatan" in df_f.columns:
         .sort_values("Target Biaya", ascending=False)
         .head(15)
     )
-    fig3 = go.Figure()
-    fig3.add_bar(name="Target Biaya", x=by_sub["Sub Kegiatan"], y=by_sub["Target Biaya"])
-    fig3.add_bar(name="Realisasi Biaya", x=by_sub["Sub Kegiatan"], y=by_sub["Realisasi Biaya"])
-    fig3.update_layout(barmode="group", xaxis_tickangle=-40)
-    st.plotly_chart(fig3, use_container_width=True)
+    fig_sub = go.Figure()
+    fig_sub.add_bar(name="Target Biaya", x=by_sub["Sub Kegiatan"], y=by_sub["Target Biaya"])
+    fig_sub.add_bar(name="Realisasi Biaya", x=by_sub["Sub Kegiatan"], y=by_sub["Realisasi Biaya"])
+    fig_sub.update_layout(barmode="group", xaxis_tickangle=-40)
+    st.plotly_chart(fig_sub, use_container_width=True)
 
 st.divider()
 
@@ -251,20 +254,19 @@ st.subheader("📋 Detail Data")
 
 display_cols = [c for c in [
     "Proyek", "PT", "Tahun", "Bulan", "Kegiatan", "Sub Kegiatan",
-    "Rincian Kegiatan", "Target Biaya", "Realisasi Biaya",
-    "Selisih Biaya", "% Realisasi",
+    "Rincian Kegiatan", "Target Ha", "Realisasi Ha",
+    "Target Biaya", "Realisasi Biaya", "Selisih Biaya", "% Realisasi",
 ] if c in df_f.columns]
 
 def highlight_over_budget(row):
-    if "Realisasi Biaya" in row and "Target Biaya" in row:
-        if row["Realisasi Biaya"] > row["Target Biaya"] and row["Target Biaya"] > 0:
-            return ["background-color: #ffe1e1"] * len(row)
+    if row.get("Realisasi Biaya", 0) > row.get("Target Biaya", 0) and row.get("Target Biaya", 0) > 0:
+        return ["background-color: #ffe1e1"] * len(row)
     return [""] * len(row)
 
-styled = df_f[display_cols].style.apply(highlight_over_budget, axis=1).format(
-    {c: RUPIAH for c in ["Target Biaya", "Realisasi Biaya", "Selisih Biaya"] if c in display_cols}
-)
+fmt = {c: RUPIAH for c in ["Target Biaya", "Realisasi Biaya", "Selisih Biaya"] if c in display_cols}
+fmt.update({c: ANGKA for c in ["Target Ha", "Realisasi Ha"] if c in display_cols})
 
+styled = df_f[display_cols].style.apply(highlight_over_budget, axis=1).format(fmt)
 st.dataframe(styled, use_container_width=True, height=450)
 
-st.caption("🔴 Baris berwarna merah = Realisasi Biaya melebihi Target Biaya.")
+st.caption("🔴 Baris merah = Realisasi Biaya melebihi Target Biaya.")
