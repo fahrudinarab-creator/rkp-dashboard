@@ -111,34 +111,65 @@ if missing:
     st.warning(f"Kolom berikut tidak ditemukan di sheet '{sheet_choice}': {', '.join(missing)}. "
                f"Pastikan Anda memilih sheet 'Rekap RKP'.")
 
-# --- Filters ---
-st.sidebar.markdown("### 🔍 Filter Data")
+# --- Filters umum (multi-select, broad) ---
+st.sidebar.markdown("### 🔍 Filter Umum")
 
-def multiselect_filter(col_name, label):
-    if col_name in df.columns:
-        options = sorted(df[col_name].dropna().unique().tolist())
+def multiselect_filter(col_name, label, data):
+    if col_name in data.columns:
+        options = sorted(data[col_name].dropna().unique().tolist())
         selected = st.sidebar.multiselect(label, options, default=options)
         return selected
     return None
 
-proyek_sel = multiselect_filter("Proyek", "Proyek")
-tahun_sel = multiselect_filter("Tahun", "Tahun")
-kegiatan_sel = multiselect_filter("Kegiatan", "Kegiatan")
-bulan_sel = multiselect_filter("Bulan", "Bulan / Cawu")
+proyek_sel = multiselect_filter("Proyek", "Proyek", df)
+tahun_sel = multiselect_filter("Tahun", "Tahun", df)
+bulan_sel = multiselect_filter("Bulan", "Bulan / Cawu", df)
 
 df_f = df.copy()
 if proyek_sel is not None:
     df_f = df_f[df_f["Proyek"].isin(proyek_sel)]
 if tahun_sel is not None:
     df_f = df_f[df_f["Tahun"].isin(tahun_sel)]
-if kegiatan_sel is not None:
-    df_f = df_f[df_f["Kegiatan"].isin(kegiatan_sel)]
 if bulan_sel is not None:
     df_f = df_f[df_f["Bulan"].isin(bulan_sel)]
+
+# --- Filter bertingkat / drill-down: Kegiatan -> Sub Kegiatan -> Rincian Kegiatan ---
+st.sidebar.markdown("### 🎯 Fokus Pekerjaan (Drill-down)")
+st.sidebar.caption("Pilih satu pekerjaan spesifik — grafik, tabel, dan analisa di bawah akan otomatis menyesuaikan.")
+
+ALL = "— Semua —"
+
+def cascading_select(col_name, label, data):
+    if col_name not in data.columns:
+        return None, data
+    options = [ALL] + sorted(data[col_name].dropna().unique().tolist())
+    choice = st.sidebar.selectbox(label, options, index=0, key=f"dd_{col_name}")
+    if choice != ALL:
+        data = data[data[col_name] == choice]
+    return (choice if choice != ALL else None), data
+
+kegiatan_pick, df_f = cascading_select("Kegiatan", "Kegiatan", df_f)
+sub_pick, df_f = cascading_select("Sub Kegiatan", "Sub Kegiatan", df_f)
+rincian_pick, df_f = cascading_select("Rincian Kegiatan", "Rincian Kegiatan (Pekerjaan)", df_f)
+
+# --- Klik grafik untuk filter (opsional, melengkapi drill-down sidebar) ---
+if "chart_click_kegiatan" not in st.session_state:
+    st.session_state.chart_click_kegiatan = None
+
+if st.session_state.chart_click_kegiatan and kegiatan_pick is None and "Kegiatan" in df_f.columns:
+    df_f = df_f[df_f["Kegiatan"] == st.session_state.chart_click_kegiatan]
+    st.sidebar.info(f"Grafik difilter ke Kegiatan: **{st.session_state.chart_click_kegiatan}**")
+    if st.sidebar.button("✖️ Batalkan filter dari grafik"):
+        st.session_state.chart_click_kegiatan = None
+        st.rerun()
 
 if df_f.empty:
     st.warning("Tidak ada data untuk kombinasi filter ini.")
     st.stop()
+
+if kegiatan_pick or sub_pick or rincian_pick:
+    label_focus = rincian_pick or sub_pick or kegiatan_pick
+    st.info(f"🎯 Menampilkan detail untuk: **{label_focus}**")
 
 # ---------------------------------------------------------
 # KPI CARDS
@@ -175,13 +206,19 @@ col_a, col_b = st.columns(2)
 
 with col_a:
     st.subheader("Target Biaya per Kegiatan")
+    st.caption("💡 Klik salah satu batang untuk memfilter tabel & analisa ke Kegiatan tersebut.")
     by_keg = df_f.groupby("Kegiatan", dropna=True)[["Target Biaya", "Realisasi Biaya"]].sum().reset_index()
     by_keg = by_keg.sort_values("Target Biaya", ascending=False)
     fig = px.bar(
         by_keg, x="Kegiatan", y=["Target Biaya", "Realisasi Biaya"],
         barmode="group", labels={"value": "Biaya (Rp)", "variable": ""},
     )
-    st.plotly_chart(fig, use_container_width=True)
+    event = st.plotly_chart(fig, use_container_width=True, on_select="rerun", key="kegiatan_chart")
+    if event and event.get("selection", {}).get("points"):
+        clicked_label = event["selection"]["points"][0].get("x")
+        if clicked_label and clicked_label != st.session_state.chart_click_kegiatan:
+            st.session_state.chart_click_kegiatan = clicked_label
+            st.rerun()
 
 with col_b:
     st.subheader("Komposisi Target Biaya per Proyek")
