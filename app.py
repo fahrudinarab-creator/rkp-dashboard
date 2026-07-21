@@ -159,8 +159,9 @@ def style_plotly(fig, title=None):
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(family="Inter, Segoe UI, sans-serif", color=C_TEXT, size=12.5),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0, title=""),
-        margin=dict(t=40 if title else 20, b=20, l=10, r=10),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
+                    title=dict(text="")),
+        margin=dict(t=40, b=20, l=10, r=10),
         title=dict(text=title, font=dict(size=13, color=C_MUTED)) if title else None,
         xaxis=dict(gridcolor=C_BORDER, showgrid=False),
         yaxis=dict(gridcolor=C_BORDER, showgrid=True, zeroline=False),
@@ -287,7 +288,7 @@ with col_table:
             display_summary,
             use_container_width=True,
             hide_index=True,
-            height=260,
+            height=330,
             on_select="rerun",
             selection_mode="single-row",
             key="proyek_table",
@@ -331,6 +332,7 @@ with col_chart:
                              color_discrete_map={"Target Rp/Ha": C_WARN, "Realisasi Rp/Ha": C_DANGER})
 
         fig_rp = style_plotly(fig_rp)
+        fig_rp.update_layout(height=330)
         st.plotly_chart(fig_rp, use_container_width=True, config={"displayModeBar": False})
 
 st.write("")
