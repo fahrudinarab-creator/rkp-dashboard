@@ -229,6 +229,10 @@ if uploaded_file is None:
     st.info("👈 Silakan upload file Excel RKP (sheet **'Rekap RKP'**) di sidebar untuk mulai.")
     st.stop()
 
+# Placeholder di posisi paling atas — akan diisi kartu KPI setelah proyek dipilih di bawah
+kpi_placeholder = st.container()
+st.write("")
+
 try:
     xl = pd.ExcelFile(uploaded_file)
     sheet_options = [s for s in xl.sheet_names if s.lower() == "rekap rkp"] or xl.sheet_names
@@ -349,14 +353,13 @@ total_realisasi_ha = df_scope["Realisasi Ha"].sum() if "Realisasi Ha" in df_scop
 capaian_biaya = pct(total_realisasi_biaya, total_target_biaya)
 capaian_fisik = pct(total_realisasi_ha, total_target_ha)
 
-# --- KPI ringkas ---
-k1, k2, k3, k4 = st.columns(4, gap="small")
-k1.metric("Target Biaya", rupiah_singkat(total_target_biaya))
-k2.metric("Realisasi Biaya", rupiah_singkat(total_realisasi_biaya))
-k3.metric("Target Fisik", f"{angka(total_target_ha)} Ha")
-k4.metric("Realisasi Fisik", f"{angka(total_realisasi_ha)} Ha")
-
-st.write("")
+# --- KPI ringkas: ditampilkan di posisi paling atas (via placeholder) ---
+with kpi_placeholder:
+    k1, k2, k3, k4 = st.columns(4, gap="small")
+    k1.metric("Target Biaya", rupiah_singkat(total_target_biaya))
+    k2.metric("Realisasi Biaya", rupiah_singkat(total_realisasi_biaya))
+    k3.metric("Target Fisik", f"{angka(total_target_ha)} Ha")
+    k4.metric("Realisasi Fisik", f"{angka(total_realisasi_ha)} Ha")
 
 col_detail, col_gauge = st.columns([2, 1], gap="medium")
 
