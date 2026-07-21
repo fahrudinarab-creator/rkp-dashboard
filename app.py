@@ -5,23 +5,111 @@ import plotly.graph_objects as go
 
 st.set_page_config(page_title="Laporan Monitoring RKP", page_icon="🌴", layout="wide")
 
-RUPIAH_M = lambda x: f"{x/1_000_000_000:,.1f} M".replace(",", "X").replace(".", ",").replace("X", ".") if abs(x) >= 1_000_000_000 else f"{x/1_000_000:,.1f} jt".replace(",", "X").replace(".", ",").replace("X", ".")
-RUPIAH = lambda x: f"Rp {x:,.0f}".replace(",", ".")
-ANGKA = lambda x: f"{x:,.1f}".replace(",", "X").replace(".", ",").replace("X", ".")
+# ---------------------------------------------------------
+# FORMATTER
+# ---------------------------------------------------------
+
+def rupiah_singkat(x):
+    if abs(x) >= 1_000_000_000:
+        val = f"{x/1_000_000_000:,.1f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        return f"Rp {val} M"
+    val = f"{x/1_000_000:,.1f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"Rp {val} jt"
+
+def rupiah(x):
+    return f"Rp {x:,.0f}".replace(",", ".")
+
+def angka(x):
+    return f"{x:,.1f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 # ---------------------------------------------------------
-# CSS - nuansa gelap ala Data Studio
+# PALET WARNA
 # ---------------------------------------------------------
-st.markdown("""
+C_BG = "#0b0e14"
+C_CARD = "#141924"
+C_BORDER = "#242b3d"
+C_TEXT = "#e8eaed"
+C_MUTED = "#9aa4b2"
+C_ACCENT = "#6366f1"
+C_ACCENT2 = "#14b8a6"
+C_WARN = "#f59e0b"
+C_DANGER = "#ef4444"
+C_OK = "#22c55e"
+
+# ---------------------------------------------------------
+# CSS
+# ---------------------------------------------------------
+st.markdown(f"""
 <style>
-    .stApp { background-color: #0e1117; }
-    div[data-testid="stMetric"] {
-        background-color: #1a1f2e;
-        border-radius: 8px;
-        padding: 12px 16px;
-        border: 1px solid #2a2f45;
-    }
-    h1, h2, h3 { color: #fafafa; }
+    .stApp {{ background-color: {C_BG}; }}
+    html, body, [class*="css"] {{ font-family: 'Inter', 'Segoe UI', sans-serif; }}
+
+    /* Header banner */
+    .rkp-header {{
+        padding: 22px 28px;
+        border-radius: 14px;
+        background: linear-gradient(135deg, {C_ACCENT}22 0%, {C_ACCENT2}11 100%);
+        border: 1px solid {C_BORDER};
+        margin-bottom: 22px;
+    }}
+    .rkp-header h1 {{
+        margin: 0; font-size: 26px; color: {C_TEXT}; font-weight: 700;
+    }}
+    .rkp-header p {{
+        margin: 4px 0 0 0; color: {C_MUTED}; font-size: 14px;
+    }}
+
+    /* Section title */
+    .rkp-section-title {{
+        display: flex; align-items: center; gap: 8px;
+        font-size: 16px; font-weight: 700; color: {C_TEXT};
+        margin-bottom: 14px; padding-bottom: 8px;
+        border-bottom: 2px solid {C_ACCENT}55;
+    }}
+
+    /* Card container (via st.container border) */
+    div[data-testid="stVerticalBlockBorderWrapper"] {{
+        border-radius: 14px !important;
+        border: 1px solid {C_BORDER} !important;
+        background-color: {C_CARD} !important;
+    }}
+
+    /* Metric cards */
+    div[data-testid="stMetric"] {{
+        background-color: {C_CARD};
+        border-radius: 10px;
+        padding: 14px 16px;
+        border: 1px solid {C_BORDER};
+    }}
+    div[data-testid="stMetricLabel"] {{ color: {C_MUTED}; font-size: 12.5px; }}
+    div[data-testid="stMetricValue"] {{ color: {C_TEXT}; font-size: 20px; }}
+
+    /* Dataframe */
+    div[data-testid="stDataFrame"] {{ border-radius: 10px; overflow: hidden; }}
+
+    h1, h2, h3 {{ color: {C_TEXT}; }}
+    hr {{ border-color: {C_BORDER}; }}
+
+    .insight-box {{
+        background-color: {C_CARD};
+        border: 1px solid {C_BORDER};
+        border-radius: 12px;
+        padding: 16px 20px;
+    }}
+    .insight-item {{
+        padding: 8px 0;
+        border-bottom: 1px solid {C_BORDER}88;
+        font-size: 14.5px; color: {C_TEXT};
+    }}
+    .insight-item:last-child {{ border-bottom: none; }}
+    .insight-sub {{
+        padding: 4px 0 4px 22px;
+        font-size: 13.5px; color: {C_MUTED};
+    }}
+    .donut-label {{
+        text-align: center; color: {C_MUTED}; font-size: 13px;
+        margin-top: -8px; font-weight: 600; letter-spacing: 0.3px;
+    }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -44,23 +132,39 @@ def pct(numerator, denominator):
     return (numerator / denominator * 100) if denominator else 0.0
 
 
-def donut(value_pct, color="#5b6fd8"):
+def donut(value_pct, color):
     value_pct = max(0, min(100, value_pct))
     fig = go.Figure(data=[go.Pie(
         values=[value_pct, 100 - value_pct],
-        hole=0.72,
-        marker_colors=[color, "#2a2f45"],
+        hole=0.74,
+        marker_colors=[color, C_BORDER],
         textinfo="none",
         sort=False,
         direction="clockwise",
     )])
     fig.update_layout(
         showlegend=False,
-        annotations=[dict(text=f"{value_pct:.2f}", x=0.5, y=0.5, font_size=30,
-                           showarrow=False, font_color="white")],
-        margin=dict(t=10, b=10, l=10, r=10),
+        annotations=[dict(text=f"{value_pct:.1f}%", x=0.5, y=0.5, font_size=26,
+                           showarrow=False, font_color=C_TEXT, font_family="Inter")],
+        margin=dict(t=6, b=6, l=6, r=6),
         paper_bgcolor="rgba(0,0,0,0)",
-        height=230,
+        height=190,
+    )
+    return fig
+
+
+def style_plotly(fig, title=None):
+    fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter, Segoe UI, sans-serif", color=C_TEXT, size=12.5),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0, title=""),
+        margin=dict(t=40 if title else 20, b=20, l=10, r=10),
+        title=dict(text=title, font=dict(size=13, color=C_MUTED)) if title else None,
+        xaxis=dict(gridcolor=C_BORDER, showgrid=False),
+        yaxis=dict(gridcolor=C_BORDER, showgrid=True, zeroline=False),
+        bargap=0.3,
     )
     return fig
 
@@ -75,36 +179,36 @@ def generate_insights(df, proyek_name):
     capaian_biaya = pct(total_realisasi_biaya, total_target_biaya)
     capaian_fisik = pct(total_realisasi_ha, total_target_ha)
 
+    main_points = []
+    sub_points = []
+
     if total_realisasi_biaya == 0 and total_realisasi_ha == 0:
-        insights.append(
-            f"ℹ️ Untuk **{proyek_name}**, kolom Realisasi Biaya & Realisasi Fisik masih kosong (0). "
-            "Begitu diisi di Excel dan file di-upload ulang, analisa *over budget* di bawah akan otomatis muncul."
-        )
+        main_points.append(("ℹ️", f"Untuk <b>{proyek_name}</b>, kolom Realisasi Biaya & Realisasi Fisik masih "
+                                   "kosong (0). Begitu diisi di Excel dan file di-upload ulang, analisa "
+                                   "<i>over budget</i> di bawah akan otomatis muncul."))
     else:
-        insights.append(
-            f"📊 **{proyek_name}**: capaian biaya **{capaian_biaya:.1f}%**, capaian fisik **{capaian_fisik:.1f}%**."
-        )
+        main_points.append(("📊", f"<b>{proyek_name}</b>: capaian biaya <b>{capaian_biaya:.1f}%</b>, "
+                                   f"capaian fisik <b>{capaian_fisik:.1f}%</b>."))
         if capaian_fisik > 0 and capaian_biaya > capaian_fisik + 10:
-            insights.append("⚠️ Penyerapan biaya lebih cepat dari progres fisik di lapangan — perlu dicek.")
+            main_points.append(("⚠️", "Penyerapan biaya lebih cepat dari progres fisik di lapangan — perlu dicek."))
         elif capaian_biaya > 0 and capaian_fisik > capaian_biaya + 10:
-            insights.append("✅ Progres fisik lebih cepat dari penyerapan biaya — efisiensi cukup baik.")
+            main_points.append(("✅", "Progres fisik lebih cepat dari penyerapan biaya — efisiensi cukup baik."))
 
     over = df[(df["Realisasi Biaya"] > df["Target Biaya"]) & (df["Target Biaya"] > 0)].copy()
     if not over.empty:
         over["Selisih (%)"] = (over["Realisasi Biaya"] - over["Target Biaya"]) / over["Target Biaya"] * 100
         worst = over.sort_values("Selisih (%)", ascending=False).head(5)
-        insights.append(f"🔴 **{len(over)} item** melebihi target biaya, contoh:")
+        main_points.append(("🔴", f"Ditemukan <b>{len(over)} item</b> dengan biaya melebihi target:"))
         for _, row in worst.iterrows():
             nama = row.get("Rincian Kegiatan") or row.get("Sub Kegiatan") or row.get("Kegiatan", "")
-            insights.append(
-                f"&nbsp;&nbsp;&nbsp;⚠️ **{nama}** — lebih {RUPIAH(row['Realisasi Biaya'] - row['Target Biaya'])} "
+            sub_points.append(
+                f"⚠️ <b>{nama}</b> — lebih {rupiah(row['Realisasi Biaya'] - row['Target Biaya'])} "
                 f"({row['Selisih (%)']:.0f}% di atas target)"
             )
-    else:
-        if total_realisasi_biaya > 0:
-            insights.append("✅ Tidak ada item yang melebihi target biaya pada proyek/filter ini.")
+    elif total_realisasi_biaya > 0:
+        main_points.append(("✅", "Tidak ada item yang melebihi target biaya pada proyek/filter ini."))
 
-    return insights
+    return main_points, sub_points
 
 
 # ---------------------------------------------------------
@@ -114,10 +218,12 @@ def generate_insights(df, proyek_name):
 st.sidebar.title("⚙️ Pengaturan")
 uploaded_file = st.sidebar.file_uploader("Upload file Excel RKP (.xlsx)", type=["xlsx"])
 
-col_logo, col_title = st.columns([1, 6])
-with col_title:
-    st.title("🌴 Laporan Monitoring RKP")
-    st.caption("Klik salah satu baris proyek pada tabel untuk melihat detail & analisanya.")
+st.markdown("""
+<div class="rkp-header">
+    <h1>🌴 Laporan Monitoring RKP</h1>
+    <p>Klik salah satu baris proyek pada tabel untuk melihat detail, capaian, dan analisa otomatisnya.</p>
+</div>
+""", unsafe_allow_html=True)
 
 if uploaded_file is None:
     st.info("👈 Silakan upload file Excel RKP (sheet **'Rekap RKP'**) di sidebar untuk mulai.")
@@ -138,7 +244,6 @@ if missing:
     st.warning(f"Kolom berikut tidak ditemukan di sheet '{sheet_choice}': {', '.join(missing)}.")
     st.stop()
 
-# Filter tahun (opsional, mempengaruhi semua proyek)
 st.sidebar.markdown("### 🔍 Filter Tambahan")
 if "Tahun" in df.columns:
     tahun_options = sorted(df["Tahun"].dropna().unique().tolist())
@@ -146,7 +251,7 @@ if "Tahun" in df.columns:
     df = df[df["Tahun"].isin(tahun_sel)]
 
 # ---------------------------------------------------------
-# TABEL RINGKASAN PROYEK (KLIK UNTUK FILTER)
+# RINGKASAN PROYEK + GRAFIK RP/HA
 # ---------------------------------------------------------
 
 proyek_summary = (
@@ -165,23 +270,25 @@ proyek_summary["Target Rp/Ha"] = proyek_summary.apply(
 proyek_summary["Realisasi Rp/Ha"] = proyek_summary.apply(
     lambda r: r["Realisasi Biaya"] / r["Realisasi Ha"] if r["Realisasi Ha"] else 0, axis=1)
 
-col_table, col_chart = st.columns([1, 1.3])
+col_table, col_chart = st.columns([1, 1.3], gap="medium")
 
 with col_table:
-    st.subheader("Proyek")
-    display_summary = proyek_summary[["Proyek", "Target Biaya", "Realisasi Biaya"]].copy()
-    display_summary["Target Biaya"] = display_summary["Target Biaya"].apply(RUPIAH_M)
-    display_summary["Realisasi Biaya"] = display_summary["Realisasi Biaya"].apply(RUPIAH_M)
+    with st.container(border=True):
+        st.markdown('<div class="rkp-section-title">🏗️ Daftar Proyek</div>', unsafe_allow_html=True)
+        display_summary = proyek_summary[["Proyek", "Target Biaya", "Realisasi Biaya"]].copy()
+        display_summary["Target Biaya"] = display_summary["Target Biaya"].apply(rupiah_singkat)
+        display_summary["Realisasi Biaya"] = display_summary["Realisasi Biaya"].apply(rupiah_singkat)
 
-    event = st.dataframe(
-        display_summary,
-        use_container_width=True,
-        hide_index=True,
-        height=280,
-        on_select="rerun",
-        selection_mode="single-row",
-        key="proyek_table",
-    )
+        event = st.dataframe(
+            display_summary,
+            use_container_width=True,
+            hide_index=True,
+            height=260,
+            on_select="rerun",
+            selection_mode="single-row",
+            key="proyek_table",
+        )
+        st.caption("💡 Klik salah satu baris untuk melihat detail proyek.")
 
 selected_rows = []
 try:
@@ -189,50 +296,46 @@ try:
 except Exception:
     selected_rows = event.get("selection", {}).get("rows", []) if isinstance(event, dict) else []
 
-if selected_rows:
-    proyek_pilihan = proyek_summary.iloc[selected_rows[0]]["Proyek"]
-else:
-    proyek_pilihan = None  # mode overview: semua proyek dibandingkan
+proyek_pilihan = proyek_summary.iloc[selected_rows[0]]["Proyek"] if selected_rows else None
 
 with col_chart:
-    st.subheader("Rp/Ha — Target vs Realisasi")
-    if proyek_pilihan is None:
-        rp_ha_chart_df = proyek_summary.melt(
-            id_vars="Proyek", value_vars=["Target Rp/Ha", "Realisasi Rp/Ha"],
-            var_name="Jenis", value_name="Nilai",
-        )
-        fig_rp = px.bar(rp_ha_chart_df, x="Proyek", y="Nilai", color="Jenis", barmode="group",
-                         color_discrete_map={"Target Rp/Ha": "#f5a623", "Realisasi Rp/Ha": "#d0392b"})
-    else:
-        df_scope = df[df["Proyek"] == proyek_pilihan]
-        by_keg = df_scope.groupby("Kegiatan", dropna=True).agg(
-            **{"Target Biaya": ("Target Biaya", "sum"),
-               "Realisasi Biaya": ("Realisasi Biaya", "sum"),
-               "Target Ha": ("Target Ha", "sum") if "Target Ha" in df.columns else ("Target Biaya", "sum"),
-               "Realisasi Ha": ("Realisasi Ha", "sum") if "Realisasi Ha" in df.columns else ("Realisasi Biaya", "sum")}
-        ).reset_index()
-        by_keg["Target Rp/Ha"] = by_keg.apply(lambda r: r["Target Biaya"] / r["Target Ha"] if r["Target Ha"] else 0, axis=1)
-        by_keg["Realisasi Rp/Ha"] = by_keg.apply(lambda r: r["Realisasi Biaya"] / r["Realisasi Ha"] if r["Realisasi Ha"] else 0, axis=1)
-        rp_ha_chart_df = by_keg.melt(
-            id_vars="Kegiatan", value_vars=["Target Rp/Ha", "Realisasi Rp/Ha"],
-            var_name="Jenis", value_name="Nilai",
-        )
-        fig_rp = px.bar(rp_ha_chart_df, x="Kegiatan", y="Nilai", color="Jenis", barmode="group",
-                         color_discrete_map={"Target Rp/Ha": "#f5a623", "Realisasi Rp/Ha": "#d0392b"})
-        fig_rp.update_layout(title=f"Rincian Kegiatan — {proyek_pilihan}")
+    with st.container(border=True):
+        if proyek_pilihan is None:
+            st.markdown('<div class="rkp-section-title">💰 Rp/Ha — Target vs Realisasi (Semua Proyek)</div>', unsafe_allow_html=True)
+            rp_ha_chart_df = proyek_summary.melt(
+                id_vars="Proyek", value_vars=["Target Rp/Ha", "Realisasi Rp/Ha"],
+                var_name="Jenis", value_name="Nilai",
+            )
+            fig_rp = px.bar(rp_ha_chart_df, x="Proyek", y="Nilai", color="Jenis", barmode="group",
+                             color_discrete_map={"Target Rp/Ha": C_WARN, "Realisasi Rp/Ha": C_DANGER})
+        else:
+            st.markdown(f'<div class="rkp-section-title">💰 Rp/Ha per Kegiatan — {proyek_pilihan}</div>', unsafe_allow_html=True)
+            df_scope_chart = df[df["Proyek"] == proyek_pilihan]
+            by_keg = df_scope_chart.groupby("Kegiatan", dropna=True).agg(
+                **{"Target Biaya": ("Target Biaya", "sum"),
+                   "Realisasi Biaya": ("Realisasi Biaya", "sum"),
+                   "Target Ha": ("Target Ha", "sum") if "Target Ha" in df.columns else ("Target Biaya", "sum"),
+                   "Realisasi Ha": ("Realisasi Ha", "sum") if "Realisasi Ha" in df.columns else ("Realisasi Biaya", "sum")}
+            ).reset_index()
+            by_keg["Target Rp/Ha"] = by_keg.apply(lambda r: r["Target Biaya"] / r["Target Ha"] if r["Target Ha"] else 0, axis=1)
+            by_keg["Realisasi Rp/Ha"] = by_keg.apply(lambda r: r["Realisasi Biaya"] / r["Realisasi Ha"] if r["Realisasi Ha"] else 0, axis=1)
+            rp_ha_chart_df = by_keg.melt(
+                id_vars="Kegiatan", value_vars=["Target Rp/Ha", "Realisasi Rp/Ha"],
+                var_name="Jenis", value_name="Nilai",
+            )
+            fig_rp = px.bar(rp_ha_chart_df, x="Kegiatan", y="Nilai", color="Jenis", barmode="group",
+                             color_discrete_map={"Target Rp/Ha": C_WARN, "Realisasi Rp/Ha": C_DANGER})
 
-    fig_rp.update_layout(template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)",
-                          plot_bgcolor="rgba(0,0,0,0)", legend_title="")
-    st.plotly_chart(fig_rp, use_container_width=True)
+        fig_rp = style_plotly(fig_rp)
+        st.plotly_chart(fig_rp, use_container_width=True, config={"displayModeBar": False})
 
-st.divider()
+st.write("")
 
 # ---------------------------------------------------------
 # DETAIL PROYEK TERPILIH
 # ---------------------------------------------------------
 
 if proyek_pilihan is None:
-    st.info("💡 Klik salah satu baris proyek di atas untuk melihat detail kegiatan, capaian, dan analisa over budget-nya.")
     df_scope = df
     judul_detail = "Semua Proyek"
 else:
@@ -246,43 +349,70 @@ total_realisasi_ha = df_scope["Realisasi Ha"].sum() if "Realisasi Ha" in df_scop
 capaian_biaya = pct(total_realisasi_biaya, total_target_biaya)
 capaian_fisik = pct(total_realisasi_ha, total_target_ha)
 
-col_detail, col_gauge = st.columns([2, 1])
+# --- KPI ringkas ---
+k1, k2, k3, k4 = st.columns(4, gap="small")
+k1.metric("Target Biaya", rupiah_singkat(total_target_biaya))
+k2.metric("Realisasi Biaya", rupiah_singkat(total_realisasi_biaya))
+k3.metric("Target Fisik", f"{angka(total_target_ha)} Ha")
+k4.metric("Realisasi Fisik", f"{angka(total_realisasi_ha)} Ha")
+
+st.write("")
+
+col_detail, col_gauge = st.columns([2, 1], gap="medium")
 
 with col_detail:
-    st.subheader(f"📋 Detail — {judul_detail}")
-    display_cols = [c for c in [
-        "Kegiatan", "Sub Kegiatan", "Rincian Kegiatan",
-        "Target Biaya", "Realisasi Biaya", "Target Ha", "Realisasi Ha",
-    ] if c in df_scope.columns]
+    with st.container(border=True):
+        st.markdown(f'<div class="rkp-section-title">📋 Detail Pekerjaan — {judul_detail}</div>', unsafe_allow_html=True)
+        display_cols = [c for c in [
+            "Kegiatan", "Sub Kegiatan", "Rincian Kegiatan",
+            "Target Biaya", "Realisasi Biaya", "Target Ha", "Realisasi Ha",
+        ] if c in df_scope.columns]
 
-    def highlight_over_budget(row):
-        if row.get("Realisasi Biaya", 0) > row.get("Target Biaya", 0) and row.get("Target Biaya", 0) > 0:
-            return ["background-color: #4a1f1f"] * len(row)
-        return [""] * len(row)
+        def highlight_over_budget(row):
+            if row.get("Realisasi Biaya", 0) > row.get("Target Biaya", 0) and row.get("Target Biaya", 0) > 0:
+                return [f"background-color: {C_DANGER}33"] * len(row)
+            return [""] * len(row)
 
-    fmt = {c: RUPIAH for c in ["Target Biaya", "Realisasi Biaya"] if c in display_cols}
-    fmt.update({c: ANGKA for c in ["Target Ha", "Realisasi Ha"] if c in display_cols})
+        fmt = {c: rupiah for c in ["Target Biaya", "Realisasi Biaya"] if c in display_cols}
+        fmt.update({c: angka for c in ["Target Ha", "Realisasi Ha"] if c in display_cols})
 
-    styled = df_scope[display_cols].style.apply(highlight_over_budget, axis=1).format(fmt)
-    st.dataframe(styled, use_container_width=True, height=380)
-    st.caption("🔴 Baris merah = Realisasi Biaya melebihi Target Biaya.")
+        styled = df_scope[display_cols].style.apply(highlight_over_budget, axis=1).format(fmt)
+        st.dataframe(styled, use_container_width=True, height=360, hide_index=True)
+        st.caption("🔴 Baris merah = Realisasi Biaya melebihi Target Biaya.")
 
 with col_gauge:
-    st.subheader("Capaian")
-    g1, g2 = st.columns(2)
-    with g1:
-        st.plotly_chart(donut(capaian_biaya, "#5b6fd8"), use_container_width=True)
-        st.markdown("<p style='text-align:center;'>Capaian Biaya</p>", unsafe_allow_html=True)
-    with g2:
-        st.plotly_chart(donut(capaian_fisik, "#5bc0be"), use_container_width=True)
-        st.markdown("<p style='text-align:center;'>Capaian Fisik</p>", unsafe_allow_html=True)
+    with st.container(border=True):
+        st.markdown('<div class="rkp-section-title">🎯 Capaian</div>', unsafe_allow_html=True)
+        g1, g2 = st.columns(2)
+        with g1:
+            st.plotly_chart(donut(capaian_biaya, C_ACCENT), use_container_width=True, config={"displayModeBar": False})
+            st.markdown('<div class="donut-label">CAPAIAN BIAYA</div>', unsafe_allow_html=True)
+        with g2:
+            st.plotly_chart(donut(capaian_fisik, C_ACCENT2), use_container_width=True, config={"displayModeBar": False})
+            st.markdown('<div class="donut-label">CAPAIAN FISIK</div>', unsafe_allow_html=True)
 
-st.divider()
+        st.write("")
+        st.markdown(f"""
+        <div style="font-size:13px; color:{C_MUTED}; line-height:1.9;">
+            Sisa Biaya &nbsp;&nbsp;<b style="color:{C_TEXT};">{rupiah_singkat(total_target_biaya - total_realisasi_biaya)}</b><br>
+            Sisa Fisik &nbsp;&nbsp;&nbsp;<b style="color:{C_TEXT};">{angka(total_target_ha - total_realisasi_ha)} Ha</b>
+        </div>
+        """, unsafe_allow_html=True)
+
+st.write("")
 
 # ---------------------------------------------------------
 # ANALISA OTOMATIS
 # ---------------------------------------------------------
 
-st.subheader("🧠 Analisa Otomatis")
-for insight in generate_insights(df_scope, judul_detail):
-    st.markdown(insight, unsafe_allow_html=True)
+with st.container(border=True):
+    st.markdown('<div class="rkp-section-title">🧠 Analisa Otomatis</div>', unsafe_allow_html=True)
+    main_points, sub_points = generate_insights(df_scope, judul_detail)
+
+    html = '<div class="insight-box">'
+    for icon, text in main_points:
+        html += f'<div class="insight-item">{icon}&nbsp;&nbsp;{text}</div>'
+    for text in sub_points:
+        html += f'<div class="insight-sub">{text}</div>'
+    html += '</div>'
+    st.markdown(html, unsafe_allow_html=True)
